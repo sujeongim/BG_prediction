@@ -4,7 +4,7 @@ Code for Blood Glucose Level Prediction
 
 ## 1. Task : BG Prediction
 - ML 혹은 DL 모델을 사용해서 30분 (6 point 이후)를 예측하는 regression model 개발
-- Input Data : { Xt-7, Xt-6, Xt-5, Xt-4, Xt-3, Xt-2, Xt-1, Xt } -> Output value : Xt+6
+- Input Data : { $X_{t-7}, X_{t-6}, X_{t-5}, X_{t-4}, X_{t-3}, X_{t-2}, X_{t-1}, X_t$ } -> Output value : $X_{t+6}$
 
 
 ## 2. Data : T1DMS Virtual Patients BG Data
