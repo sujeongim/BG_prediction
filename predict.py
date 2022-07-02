@@ -6,10 +6,14 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from model import BGprediction
-
 from utils import load_BG_predict
 from utils import get_hidden_sizes
+
+# ml models
+from model import MLP, LSTM
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.ensemble import RandomForestRegressor
 
 def load(fn, device):
     d = torch.load(fn, map_location=device) 
@@ -36,6 +40,15 @@ def test(n, model, x, y, to_be_shown=True):
     if to_be_shown:
         plot(y, y_hat)
         
+def test_ml(n, model, x, y, to_be_shown=True):
+    y_hat = model.predict(x)
+    mse_loss = nn.MSELoss()
+    rmse = float(torch.sqrt(mse_loss(y_hat, y)))
+    mape = float(torch.mean(torch.abs((y - y_hat) / y_hat)) * 100)
+    print("patient %d   RMSE : %.4e , MAPE : %.4e" % (n, rmse, mape))
+    if to_be_shown:
+        plot(y, y_hat)
+
 def define_argparser():
     p = argparse.ArgumentParser()
 
@@ -48,6 +61,30 @@ def define_argparser():
 
     return config
 
+def get_model(config, input_size, output_size, hidden_sizes, use_batch_norm, dropout_p):
+    if config.model == "MLP":
+        model = MLP(input_size, 
+                    output_size, 
+                    hidden_sizes, 
+                    use_batch_norm, 
+                    dropout_p)
+
+    elif config.model == "LSTM":
+        model = LSTM(input_size, 
+                    output_size,
+                    hidden_sizes,
+                    use_batch_norm,
+                    dropout_p,
+                    lstm_hidden_size=500, 
+                    n_layers=2)
+
+    elif config.model == "SVR":
+        model = SVR(kernel='rbf', gamma='auto', C=10**5)
+    elif config.model == "KNN":
+        model = KNeighborsRegressor(n_neighbors=7, weights='distance', metric='euclidian')
+    elif config.model == "RFR":
+        model = RandomForestRegressor(n_estimators=235, max_depth=8, min_sample_split=2, max_features='auto')
+    return model
 
 def main(config):
     # Set device based on user defined configuration.
@@ -56,32 +93,48 @@ def main(config):
     data = load_BG_predict(config).to(device)
     
     print(data.shape)
-    model_dict, train_config = load(config.model_fn, device)
-
-    input_size = train_config.points_to_see
-    output_size = 1
+    if config.model in ['SVR', 'KNN', 'RFR']:
+        model, train_config = load(config.model_fn, device)
         
-    model = BGprediction(
-        input_size=input_size,
-        output_size=output_size,
-        hidden_sizes=get_hidden_sizes(input_size, output_size, train_config.n_layers),
-        use_batch_norm=not train_config.use_dropout,
-        dropout_p=train_config.dropout_p,
-        ).to(device)
+        for n, data_per_patient in enumerate(data):
+            print(data_per_patient.shape)
+            x_test = []
+            y_test = []
 
-    model.load_state_dict(model_dict)
+            for i in range(train_config.points_to_see, len(data_per_patient)-(train_config.next_points_predict)):
+                x_test.append(data_per_patient[i-train_config.points_to_see:i])
+                y_test.append(data_per_patient[i+train_config.next_points_predict-1])
+
+            x_test, y_test = torch.stack(x_test).float().to(device), torch.stack(y_test).float().to(device)
+            test_ml(n, model, x_test, y_test, to_be_shown=True)
     
-    for n, data_per_patient in enumerate(data):
-        print(data_per_patient.shape)
-        x_test = []
-        y_test = []
+    elif config.model in ['LSTM', 'MLP']:
+        model_dict, train_config = load(config.model_fn, device)
 
-        for i in range(train_config.points_to_see, len(data_per_patient)-(train_config.next_points_predict)):
-            x_test.append(data_per_patient[i-train_config.points_to_see:i])
-            y_test.append(data_per_patient[i+train_config.next_points_predict-1])
+        input_size = train_config.points_to_see
+        output_size = 1
+        
+        model = get_model(
+            input_size=input_size,
+            output_size=output_size,
+            hidden_sizes=get_hidden_sizes(input_size, output_size, train_config.n_layers),
+            use_batch_norm=not train_config.use_dropout,
+            dropout_p=train_config.dropout_p,
+            ).to(device)
 
-        x_test, y_test = torch.stack(x_test).float().to(device), torch.stack(y_test).float().to(device)
-        test(n, model, x_test, y_test, to_be_shown=True)
+        model.load_state_dict(model_dict)
+    
+        for n, data_per_patient in enumerate(data):
+            print(data_per_patient.shape)
+            x_test = []
+            y_test = []
+
+            for i in range(train_config.points_to_see, len(data_per_patient)-(train_config.next_points_predict)):
+                x_test.append(data_per_patient[i-train_config.points_to_see:i])
+                y_test.append(data_per_patient[i+train_config.next_points_predict-1])
+
+            x_test, y_test = torch.stack(x_test).float().to(device), torch.stack(y_test).float().to(device)
+            test(n, model, x_test, y_test, to_be_shown=True)
 
 
 
