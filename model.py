@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 # basic sequential block
 class Block(nn.Module):
@@ -33,12 +34,12 @@ class Block(nn.Module):
         # |y| = (batch_size, output_size)
         return y.squeeze()
 
-class BGprediction(nn.Module):
+class MLP(nn.Module):
 
     def __init__(self,
                  input_size,
                  output_size,
-                 hidden_sizes=[500, 400, 300, 200, 100], 
+                 hidden_sizes=[32, 16, 8, 4], 
                  use_batch_norm=True,
                  dropout_p=.4):
 
@@ -68,3 +69,46 @@ class BGprediction(nn.Module):
         # |y| = (batch_size, output_size)
         return y.squeeze()
 
+class LSTM(nn.Module):
+    def __init__(self, 
+                input_size, 
+                output_size,
+                lstm_hidden_size=32, 
+                hidden_sizes=[16, 8, 4],
+                use_batch_norm=True,
+                n_layers=2, 
+                dropout_p = 0.3) -> None:
+
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_sizes = hidden_sizes
+        self.output_size = output_size
+        self.n_layers = n_layers
+        self.dropout_p = dropout_p
+
+        self.rnn = nn.LSTM(
+            input_size=input_size,
+            hidden_size=lstm_hidden_size,
+            batch_first=True,
+            num_layers=n_layers,
+        )
+
+        last_hidden_size = lstm_hidden_size
+        hidden_layers = []
+        for hidden_size in hidden_sizes:
+            hidden_layers += [Block(
+                            last_hidden_size, 
+                            hidden_size, 
+                            use_batch_norm, 
+                            dropout_p)]
+            last_hidden_size = hidden_size
+
+        self.layers = nn.Sequential(
+            *hidden_layers,
+            nn.Linear(last_hidden_size, output_size),
+        )
+    
+    def forward(self, x):
+        y_rnn , _ = self.rnn(x)
+        y = self.layers(y_rnn)
+        return y
